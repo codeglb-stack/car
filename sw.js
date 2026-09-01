@@ -1,4 +1,4 @@
-const CACHE_NAME = "commute-bus-h5-v16";
+const CACHE_NAME = "commute-bus-h5-v20";
 const ASSETS = ["./", "./index.html", "./style.css", "./app.js", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", (event) => {

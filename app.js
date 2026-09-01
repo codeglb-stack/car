@@ -1,5 +1,5 @@
 (function () {
-  const API_BASE_URL = window.APP_CONFIG?.API_BASE_URL || "";
+  const API_BASE_URL = window.APP_CONFIG?.API_BASE_URL || "https://v1.apizero.cn/api/bus-realtime";
   const STORAGE_KEY = "commute_bus_routes_v2";
 
   const DEFAULT_STATE = {
@@ -8,6 +8,7 @@
     error: "",
     emptyMessage: "",
     data: null,
+    apiKey: "",
     routes: [],
     activeId: "",
     form: null
@@ -53,11 +54,12 @@
     try {
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
       return {
+        apiKey: stored.apiKey || "",
         routes: Array.isArray(stored.routes) ? stored.routes : [],
         activeId: stored.activeId || ""
       };
     } catch {
-      return { routes: [], activeId: "" };
+      return { apiKey: "", routes: [], activeId: "" };
     }
   }
 
@@ -65,6 +67,7 @@
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
+        apiKey: state.apiKey,
         routes: state.routes,
         activeId: state.activeId
       })
@@ -132,6 +135,7 @@
   function render() {
     if (state.view === "settings") {
       app.innerHTML = renderSettings();
+      bindSettingsValues();
       return;
     }
 
@@ -359,15 +363,10 @@
     const busY = hasStops ? Math.max(topY + 26, stationY - safeStops * 24 - 12) : 118;
     const station = compactText(route.station || "当前站", 11);
     const terminal = compactText(realtime.line.terminal || route.terminal || "终点方向", 12);
-    const nearCurrentStation = stationY - busY < 58;
-    const stationLabelY1 = nearCurrentStation ? stationY + 34 : stationY - 12;
-    const stationLabelY2 = nearCurrentStation ? stationY + 56 : stationY + 12;
+    const stationLabelY1 = stationY - 12;
+    const stationLabelY2 = stationY + 12;
+    const routeNodes = buildRouteNodes(topY, stationY, 5);
     const followingMarkers = layoutFollowingMarkers(realtime.buses || [], bus, lineX, topY, stationY).join("");
-    const middleDotCount = Math.min(Math.max(safeStops - 1, 0), 4);
-    const middleDots = Array.from({ length: middleDotCount }, (_, index) => {
-      const y = busY + ((stationY - busY) / (middleDotCount + 1)) * (index + 1);
-      return timelineDot(lineX, y, "small");
-    }).join("");
 
     return `
       <svg class="bus-svg" viewBox="0 0 340 360" role="img" aria-label="车辆位置示意图">
@@ -383,10 +382,12 @@
         <line x1="${lineX}" y1="${topY}" x2="${lineX}" y2="${bottomY}" stroke="rgba(255,255,255,.18)" stroke-width="3" stroke-linecap="round"/>
         <line x1="${lineX}" y1="${busY}" x2="${lineX}" y2="${stationY}" stroke="#347cff" stroke-width="4" stroke-linecap="round" filter="url(#blueGlow)"/>
         <line x1="${lineX}" y1="${stationY}" x2="${lineX}" y2="${bottomY}" stroke="rgba(255,255,255,.28)" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 13"/>
-        ${timelineDot(lineX, topY, "muted")}
-        ${middleDots}
+        ${routeNodes
+          .map((node, index) =>
+            timelineDot(lineX, node.y, index === routeNodes.length - 1 ? "routeActive" : "route")
+          )
+          .join("")}
         ${followingMarkers}
-        ${timelineDot(lineX, stationY, "active")}
         ${timelineDot(lineX, bottomY, "muted")}
         ${timelineDot(lineX, busY, "primaryBus")}
         ${timelineBusIcon(lineX - 42, busY - 14, 1.15, "#347cff", true)}
@@ -425,6 +426,14 @@
     });
   }
 
+  function buildRouteNodes(startY, endY, count) {
+    if (count <= 1) return [{ y: endY }];
+    return Array.from({ length: count }, (_, index) => {
+      const ratio = index / (count - 1);
+      return { y: startY + (endY - startY) * ratio };
+    });
+  }
+
   function timelineBusIcon(x, y, scale, fill, isPrimary) {
     const glow = isPrimary ? ' filter="url(#blueGlow)"' : "";
     const opacity = isPrimary ? "1" : "0.85";
@@ -442,6 +451,8 @@
 
   function timelineDot(x, y, variant) {
     const dots = {
+      route: { r: 4.5, fill: "rgba(52,124,255,.72)", stroke: "rgba(220,232,255,.45)", width: 1.5 },
+      routeActive: { r: 7.5, fill: "#347cff", stroke: "#dce8ff", width: 3 },
       active: { r: 8, fill: "#347cff", stroke: "#dce8ff", width: 3 },
       primaryBus: { r: 7, fill: "#347cff", stroke: "#dce8ff", width: 3 },
       small: { r: 3.5, fill: "rgba(120,173,255,.85)", stroke: "rgba(220,232,255,.35)", width: 1 },
@@ -459,8 +470,16 @@
     return `
       <section class="page">
         ${topbar("路线预设", { back: true })}
+        <section class="config-panel">
+          <h2 class="section-title">接口密钥</h2>
+          <div class="field">
+            <label for="apiKey">API Key</label>
+            <input id="apiKey" name="apiKey" type="password" autocomplete="off" placeholder="请输入极数本源 API Key" />
+          </div>
+          <p class="config-note">只保存在当前浏览器本地，不会上传。</p>
+        </section>
         ${renderPresetList()}
-        <button class="primary-button" data-action="back">保存</button>
+        <button class="primary-button" data-action="save-settings">保存并返回</button>
       </section>
     `;
   }
@@ -540,6 +559,17 @@
     form.note.value = formRoute.note || "";
   }
 
+  function bindSettingsValues() {
+    const input = document.getElementById("apiKey");
+    if (!input) return;
+    input.value = state.apiKey || "";
+  }
+
+  function updateApiKey(value) {
+    state.apiKey = value.trim();
+    persist();
+  }
+
   async function loadRealtime() {
     const route = getActiveRoute();
     if (!route) {
@@ -547,8 +577,8 @@
       return;
     }
 
-    if (!API_BASE_URL) {
-      setState({ data: null, loading: false, error: "请先在 config.js 中配置代理接口地址", emptyMessage: "" });
+    if (!state.apiKey) {
+      setState({ data: null, loading: false, error: "请先在设置里填写 API Key", emptyMessage: "" });
       return;
     }
 
@@ -557,9 +587,7 @@
     try {
       const response = await fetch(API_BASE_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: buildApiHeaders(),
         body: JSON.stringify({
           type: "query",
           city: route.city,
@@ -589,7 +617,7 @@
 
   async function preloadRouteDirections(routeId) {
     const route = getRoutes().find((item) => item.id === routeId);
-    if (!route || !API_BASE_URL) return;
+    if (!route || !state.apiKey) return;
 
     const directions = [1, 2].filter((direction) => !terminalForDirection(route, direction));
     if (!directions.length) return;
@@ -598,9 +626,7 @@
       directions.map(async (direction) => {
         const response = await fetch(API_BASE_URL, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
+          headers: buildApiHeaders(),
           body: JSON.stringify({
             type: "line",
             city: route.city,
@@ -695,6 +721,14 @@
       };
     });
     persist();
+  }
+
+  function buildApiHeaders() {
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${state.apiKey}`,
+      "X-API-Key": state.apiKey
+    };
   }
 
   function normalizeRealtime(data, route) {
@@ -805,6 +839,12 @@
     loadRealtime();
   }
 
+  function saveSettingsAndGoHome() {
+    const input = document.getElementById("apiKey");
+    if (input) updateApiKey(input.value);
+    goHomeAndLoad();
+  }
+
   function goHomeAndLoad() {
     setState({ view: "home", form: null, data: null, error: "", emptyMessage: "" });
   }
@@ -823,9 +863,15 @@
         setState({ view: "settings", form: null });
       } else if (state.view === "detail") {
         goHomeAndLoad();
+      } else if (state.view === "settings") {
+        saveSettingsAndGoHome();
       } else {
         goHomeAndLoad();
       }
+    }
+
+    if (action === "save-settings") {
+      saveSettingsAndGoHome();
     }
 
     if (action === "activate-route") {
@@ -872,6 +918,11 @@
     if (event.target.id !== "routeForm") return;
     event.preventDefault();
     saveForm(event.target);
+  });
+
+  app.addEventListener("input", (event) => {
+    if (event.target.id !== "apiKey") return;
+    updateApiKey(event.target.value);
   });
 
   window.addEventListener(

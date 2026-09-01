@@ -335,6 +335,19 @@ button {
   font-weight: 760;
 }
 
+.config-panel {
+  margin-bottom: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.config-note {
+  margin: 8px 0 0;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .preset-group {
   margin-bottom: 28px;
 }
