@@ -554,23 +554,27 @@ button {
   box-shadow: 0 0 0 4px rgba(52, 124, 255, 0.12);
 }
 
-.station-search {
+.station-search,
+.line-search {
   min-height: 22px;
 }
 
-.station-search p {
+.station-search p,
+.line-search p {
   margin: 0;
   color: var(--faint);
   font-size: 12px;
   line-height: 1.6;
 }
 
-.station-result-list {
+.station-result-list,
+.line-result-list {
   display: grid;
   gap: 8px;
 }
 
-.station-result {
+.station-result,
+.line-result {
   width: 100%;
   min-height: 44px;
   display: flex;
@@ -584,7 +588,8 @@ button {
   text-align: left;
 }
 
-.station-result span {
+.station-result span,
+.line-result span {
   min-width: 0;
   color: var(--text-strong);
   font-size: 13px;
@@ -594,9 +599,10 @@ button {
   white-space: nowrap;
 }
 
-.station-result em {
+.station-result em,
+.line-result em {
   flex: 0 0 auto;
-  max-width: 112px;
+  max-width: 178px;
   color: var(--blue-2);
   font-size: 11px;
   font-style: normal;
@@ -609,6 +615,11 @@ button {
 .station-result:disabled {
   opacity: 0.42;
   cursor: not-allowed;
+}
+
+.line-result.is-active {
+  background: rgba(52, 124, 255, 0.16);
+  border-color: rgba(120, 173, 255, 0.4);
 }
 
 .primary-button {
@@ -705,7 +716,8 @@ html[data-theme="light"] .route-card,
 html[data-theme="light"] .empty-card,
 html[data-theme="light"] .following-row,
 html[data-theme="light"] .line-detail-meta div,
-html[data-theme="light"] .station-result {
+html[data-theme="light"] .station-result,
+html[data-theme="light"] .line-result {
   box-shadow:
     0 16px 46px rgba(36, 49, 74, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.86);

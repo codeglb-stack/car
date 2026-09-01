@@ -672,6 +672,7 @@
           <div class="field">
             <label for="line">线路名称</label>
             <input id="line" name="line" type="text" placeholder="例如 401 或 401路" required />
+            <div class="line-search" id="lineSearch" aria-live="polite"></div>
           </div>
           <div class="field">
             <label for="note">备注</label>
@@ -692,6 +693,7 @@
     form.line.value = formRoute.line || "";
     form.note.value = formRoute.note || "";
     renderStationSearchHint();
+    renderLineSearch();
   }
 
   function bindSettingsValues() {
@@ -833,6 +835,120 @@
               <button type="button" class="station-result"${disabled} data-action="select-station" data-name="${escapeHtml(station.name)}">
                 <span>${escapeHtml(station.name)}</span>
                 <em>${escapeHtml(kind || "可查询")}</em>
+              </button>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
+  async function loadStationLinesFromForm() {
+    const formRoute = state.form?.route;
+    if (!formRoute) return;
+
+    const city = String(formRoute.city || "").trim();
+    const station = String(formRoute.station || "").trim();
+    if (!city || !station) {
+      setFormLineState([], "");
+      return;
+    }
+
+    setFormLineState([], "正在加载该站线路...");
+
+    try {
+      const results = await Promise.allSettled(
+        [1, 2].map((direction) =>
+          requestBusApi({
+            type: "query",
+            city,
+            station,
+            direction
+          }).then((data) => ({ data, direction }))
+        )
+      );
+      const lines = mergeStationLines(results);
+      setFormLineState(lines, lines.length ? "" : "该站暂未返回可选线路，可手动填写。");
+    } catch (error) {
+      setFormLineState([], error.message || "线路加载失败，可手动填写。");
+    }
+  }
+
+  function mergeStationLines(results) {
+    const map = new Map();
+    results.forEach((result) => {
+      if (result.status !== "fulfilled") return;
+      const direction = result.value.direction;
+      const lines = Array.isArray(result.value.data?.lines) ? result.value.data.lines : [];
+      lines.forEach((item) => {
+        const line = String(item.line || "").trim();
+        if (!line) return;
+        const key = line.replace(/路$/, "");
+        const current = map.get(key) || {
+          line,
+          terminals: [],
+          bus_count: 0
+        };
+        const terminal = String(item.terminal || "").trim();
+        if (terminal && !current.terminals.some((entry) => entry.terminal === terminal && entry.direction === direction)) {
+          current.terminals.push({ direction, terminal });
+        }
+        current.bus_count += Number(item.bus_count || 0);
+        map.set(key, current);
+      });
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      const aNum = Number.parseInt(a.line, 10);
+      const bNum = Number.parseInt(b.line, 10);
+      if (Number.isFinite(aNum) && Number.isFinite(bNum)) return aNum - bNum;
+      return a.line.localeCompare(b.line, "zh-Hans-CN");
+    });
+  }
+
+  function setFormLineState(lines, message) {
+    if (!state.form) return;
+    state.form.lineOptions = lines;
+    state.form.lineMessage = message;
+    renderLineSearch();
+  }
+
+  function renderLineSearch() {
+    const box = document.getElementById("lineSearch");
+    if (!box) return;
+    const form = state.form || {};
+    const route = form.route || {};
+
+    if (!route.station) {
+      box.innerHTML = `<p>选择官方站点后，会自动加载可选线路。</p>`;
+      return;
+    }
+
+    if (form.lineMessage) {
+      box.innerHTML = `<p>${escapeHtml(form.lineMessage)}</p>`;
+      return;
+    }
+
+    const lines = Array.isArray(form.lineOptions) ? form.lineOptions : [];
+    if (!lines.length) {
+      box.innerHTML = `<p>点选官方站点后加载线路，也可以直接手动填写。</p>`;
+      return;
+    }
+
+    box.innerHTML = `
+      <div class="line-result-list">
+        ${lines
+          .slice(0, 12)
+          .map((line) => {
+            const terminals = line.terminals
+              .slice(0, 2)
+              .map((entry) => `开往 ${entry.terminal}`)
+              .join(" / ");
+            const active = route.line === line.line ? " is-active" : "";
+            return `
+              <button type="button" class="line-result${active}" data-action="select-line" data-line="${escapeHtml(line.line)}">
+                <span>${escapeHtml(line.line)}</span>
+                <em>${escapeHtml(terminals || `${line.bus_count || 0} 辆实时车`)}</em>
               </button>
             `;
           })
@@ -1126,10 +1242,19 @@
       form: {
         route: existing
           ? { ...existing }
-          : { id: "", city: "", station: "", line: "", note: "", direction: 1, terminals: {}, lineDetails: {} }
+          : { id: "", city: "", station: "", line: "", note: "", direction: 1, terminals: {}, lineDetails: {} },
+        lineOptions: [],
+        lineMessage: ""
       }
     });
     loadCities();
+  }
+
+  function clearFormRouteLineCache() {
+    if (!state.form?.route) return;
+    state.form.route.terminal = "";
+    state.form.route.terminals = {};
+    state.form.route.lineDetails = {};
   }
 
   function saveForm(formElement) {
@@ -1250,8 +1375,19 @@
     if (action === "select-station") {
       if (!state.form?.route || actionEl.disabled) return;
       state.form.route.station = actionEl.dataset.name || "";
+      state.form.route.line = "";
+      clearFormRouteLineCache();
       bindFormValues();
       renderStationSearchState("selected", "已选择官方站名");
+      loadStationLinesFromForm();
+    }
+
+    if (action === "select-line") {
+      if (!state.form?.route) return;
+      state.form.route.line = actionEl.dataset.line || "";
+      clearFormRouteLineCache();
+      bindFormValues();
+      renderLineSearch();
     }
 
     if (action === "add-route") {
@@ -1305,16 +1441,17 @@
     state.form.route[name] = event.target.value;
 
     if ((name === "city" || name === "line") && previousValue !== event.target.value) {
-      state.form.route.terminal = "";
-      state.form.route.terminals = {};
-      state.form.route.lineDetails = {};
+      clearFormRouteLineCache();
     }
 
     if (name === "city") {
       state.form.route.station = document.getElementById("station")?.value || state.form.route.station;
+      setFormLineState([], "");
       scheduleStationSearch();
     }
     if (name === "station") {
+      state.form.route.line = "";
+      setFormLineState([], "");
       scheduleStationSearch();
     }
   });
