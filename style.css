@@ -467,6 +467,20 @@ button {
   font-weight: 760;
 }
 
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-heading span {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 720;
+  white-space: nowrap;
+}
+
 .config-panel {
   margin-bottom: 24px;
   padding-bottom: 18px;
@@ -553,6 +567,24 @@ button {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.default-route-button {
+  height: 28px;
+  margin-top: 10px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--faint);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.default-route-button.is-active {
+  color: var(--blue-2);
+  background: rgba(52, 124, 255, 0.14);
+  border-color: rgba(120, 173, 255, 0.36);
 }
 
 .route-actions {

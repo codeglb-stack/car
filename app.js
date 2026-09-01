@@ -17,6 +17,7 @@
     citiesLoaded: false,
     routes: [],
     activeId: "",
+    defaultRouteId: "",
     form: null
   };
 
@@ -67,10 +68,11 @@
         theme: stored.theme === "light" ? "light" : "dark",
         installHidden: stored.installHidden === true,
         routes: Array.isArray(stored.routes) ? stored.routes : [],
-        activeId: stored.activeId || ""
+        activeId: stored.activeId || "",
+        defaultRouteId: stored.defaultRouteId || ""
       };
     } catch {
-      return { apiKey: "", theme: "dark", installHidden: false, routes: [], activeId: "" };
+      return { apiKey: "", theme: "dark", installHidden: false, routes: [], activeId: "", defaultRouteId: "" };
     }
   }
 
@@ -82,7 +84,8 @@
         theme: state.theme,
         installHidden: state.installHidden,
         routes: state.routes,
-        activeId: state.activeId
+        activeId: state.activeId,
+        defaultRouteId: state.defaultRouteId
       })
     );
   }
@@ -101,6 +104,12 @@
     const routes = getRoutes();
     if (!routes.length) return null;
     return routes.find((route) => route.id === state.activeId) || routes[0];
+  }
+
+  function getDefaultRoute() {
+    const routes = getRoutes();
+    if (!routes.length || !state.defaultRouteId) return null;
+    return routes.find((route) => route.id === state.defaultRouteId) || null;
   }
 
   function directionLabel(direction, terminal = "") {
@@ -738,7 +747,10 @@
     const routes = getRoutes();
     return `
       <section class="preset-group">
-        <h2 class="section-title">常用线路</h2>
+        <div class="section-heading">
+          <h2 class="section-title">常用线路</h2>
+          ${state.defaultRouteId ? `<span>桌面默认已设置</span>` : `<span>可设置桌面默认</span>`}
+        </div>
         <div class="preset-list">
           ${
             routes.length
@@ -756,11 +768,15 @@
 
   function renderRouteCard(route) {
     const directionText = directionLabel(route.direction, terminalForDirection(route));
+    const isDefault = route.id === state.defaultRouteId;
     return `
       <article class="route-card" data-action="edit-route" data-id="${route.id}">
         <div>
           <div class="route-name">${icon("bus")}<span>${escapeHtml(routeDisplayName(route, "未填写站点"))}</span></div>
           <div class="route-desc">${escapeHtml(route.line || "未填写线路")} · ${escapeHtml(route.city || "未填写城市")} · ${directionText}</div>
+          <button class="default-route-button ${isDefault ? "is-active" : ""}" data-action="set-default-route" data-id="${route.id}" type="button" aria-pressed="${isDefault ? "true" : "false"}">
+            ${isDefault ? "桌面默认打开" : "设为桌面默认"}
+          </button>
         </div>
         <div class="route-actions">
           <button class="icon-button secondary-button" data-action="edit-route" data-id="${route.id}" aria-label="编辑">${icon("edit")}</button>
@@ -1420,6 +1436,7 @@
     const nextRoutes = getRoutes().filter((item) => item.id !== id);
     state.routes = nextRoutes;
     state.activeId = nextRoutes[0]?.id || "";
+    if (state.defaultRouteId === id) state.defaultRouteId = "";
     state.data = null;
     state.error = "";
     state.emptyMessage = "";
@@ -1501,6 +1518,10 @@
       persist();
       render();
       showToast("已恢复入口");
+    }
+
+    if (action === "set-default-route") {
+      setDefaultRoute(actionEl.dataset.id);
     }
 
     if (action === "activate-route") {
@@ -1635,10 +1656,32 @@
     showToast("已添加到桌面");
   });
 
+  function setDefaultRoute(id) {
+    if (!getRoutes().some((route) => route.id === id)) return;
+    const isCurrentDefault = state.defaultRouteId === id;
+    state.defaultRouteId = isCurrentDefault ? "" : id;
+    if (!isCurrentDefault) state.activeId = id;
+    persist();
+    render();
+    showToast(isCurrentDefault ? "已取消桌面默认" : "已设为桌面默认");
+  }
+
+  function startApp() {
+    const defaultRoute = getDefaultRoute();
+    if (defaultRoute && isStandalone()) {
+      state.activeId = defaultRoute.id;
+      state.view = "detail";
+      render();
+      loadRealtime();
+      return;
+    }
+    render();
+  }
+
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
 
   applyTheme();
-  render();
+  startApp();
 })();
