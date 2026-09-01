@@ -302,8 +302,8 @@
     }
 
     const bus = state.data.bus;
-    const minutes = bus.travel_minutes ?? "--";
-    const stops = bus.stops_remaining ?? "--";
+    const minutes = displayMetric(bus.travel_minutes);
+    const stops = displayMetric(bus.stops_remaining);
     const terminal = state.data.line.terminal || terminalForDirection(route) || "";
     const terminalText = directionLabel(route.direction, terminal);
     const followingBuses = Array.isArray(state.data.buses) ? state.data.buses.slice(1, 4) : [];
@@ -363,8 +363,8 @@
         <div class="following-list">
           ${buses
             .map((bus) => {
-              const minutes = bus.travel_minutes ?? "--";
-              const stops = bus.stops_remaining ?? "--";
+              const minutes = displayMetric(bus.travel_minutes);
+              const stops = displayMetric(bus.stops_remaining);
               const busId = bus.bus_id || bus.status || "车辆";
               return `
                 <div class="following-row">
@@ -398,8 +398,8 @@
   function renderTimelineSvg(route, realtime) {
     const bus = realtime.bus || {};
     const palette = timelinePalette();
-    const stopsRemaining = Number(bus.stops_remaining);
-    const hasStops = Number.isFinite(stopsRemaining);
+    const stopsRemaining = metricNumber(bus.stops_remaining);
+    const hasStops = stopsRemaining !== null;
     const lineX = 70;
     const topY = 34;
     const stationY = 218;
@@ -477,18 +477,18 @@
 
   function layoutFollowingMarkers(buses, mainBus, lineX, topY, stationY, stationIndex = -1, palette = timelinePalette()) {
     const markerGap = 26;
-    const mainStops = Number(mainBus?.stops_remaining);
+    const mainStops = metricNumber(mainBus?.stops_remaining);
     const markers = buses
       .slice(1, 4)
       .map((bus, index) => {
-        const stops = Number(bus?.stops_remaining);
+        const stops = metricNumber(bus?.stops_remaining);
         const rawY =
           stationIndex > 0
             ? calculateBusY(stops, stationIndex, topY, stationY)
-            : calculateFallbackBusY(stops, Number.isFinite(stops), topY, stationY);
+            : calculateFallbackBusY(stops, stops !== null, topY, stationY);
         return {
           y: rawY,
-          isSameStop: Number.isFinite(mainStops) && Number.isFinite(stops) && mainStops === stops
+          isSameStop: mainStops !== null && stops !== null && mainStops === stops
         };
       })
       .sort((a, b) => a.y - b.y);
@@ -522,15 +522,16 @@
   }
 
   function calculateBusY(stopsRemaining, stationIndex, topY, stationY) {
-    const stops = Number(stopsRemaining);
-    if (!Number.isFinite(stops) || stationIndex <= 0) return topY + (stationY - topY) * 0.45;
+    const stops = metricNumber(stopsRemaining);
+    if (stops === null || stationIndex <= 0) return topY + (stationY - topY) * 0.45;
     const busIndex = Math.max(0, Math.min(stationIndex, stationIndex - stops));
     const ratio = busIndex / stationIndex;
     return topY + (stationY - topY) * ratio;
   }
 
   function calculateFallbackBusY(stopsRemaining, hasStops, topY, stationY) {
-    const safeStops = hasStops ? Math.max(0, Math.min(Number(stopsRemaining), 7)) : 3;
+    const stops = metricNumber(stopsRemaining);
+    const safeStops = hasStops && stops !== null ? Math.max(0, Math.min(stops, 7)) : 3;
     return hasStops ? Math.max(topY + 26, stationY - safeStops * 24 - 12) : 118;
   }
 
@@ -1068,6 +1069,22 @@
     return headers;
   }
 
+  function metricNumber(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function metricRank(value) {
+    const number = metricNumber(value);
+    return number === null ? 999 : number;
+  }
+
+  function displayMetric(value) {
+    const number = metricNumber(value);
+    return number === null ? "--" : value;
+  }
+
   function normalizeRealtime(data, route, lineDetail = null) {
     const lines = Array.isArray(data?.lines) ? data.lines : [];
     const cleanLine = String(route.line || "").replace(/路$/, "");
@@ -1081,16 +1098,14 @@
       return null;
     }
 
-    const buses = matchedLine.buses
-      .filter((bus) => bus && bus.status !== "已过站")
-      .sort((a, b) => {
-        const aStops = Number.isFinite(Number(a.stops_remaining)) ? Number(a.stops_remaining) : 999;
-        const bStops = Number.isFinite(Number(b.stops_remaining)) ? Number(b.stops_remaining) : 999;
-        const aMinutes = Number.isFinite(Number(a.travel_minutes)) ? Number(a.travel_minutes) : 999;
-        const bMinutes = Number.isFinite(Number(b.travel_minutes)) ? Number(b.travel_minutes) : 999;
-        return aStops - bStops || aMinutes - bMinutes;
-      });
-
+    const availableBuses = matchedLine.buses.filter((bus) => bus && bus.status !== "已过站");
+    const busesWithEta = availableBuses
+      .filter((bus) => metricNumber(bus.travel_minutes) !== null)
+      .sort((a, b) => metricRank(a.travel_minutes) - metricRank(b.travel_minutes) || metricRank(a.stops_remaining) - metricRank(b.stops_remaining));
+    const busesWithoutEta = availableBuses
+      .filter((bus) => metricNumber(bus.travel_minutes) === null)
+      .sort((a, b) => metricRank(a.stops_remaining) - metricRank(b.stops_remaining));
+    const buses = [...busesWithEta, ...busesWithoutEta];
     const bus = buses[0] || matchedLine.buses[0];
     return {
       raw: data,
