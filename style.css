@@ -7,8 +7,15 @@
   --line: rgba(255, 255, 255, 0.1);
   --line-strong: rgba(255, 255, 255, 0.18);
   --text: #f7f9ff;
+  --text-strong: #ffffff;
   --muted: rgba(247, 249, 255, 0.58);
   --faint: rgba(247, 249, 255, 0.34);
+  --label: rgba(255, 255, 255, 0.78);
+  --heading-soft: rgba(255, 255, 255, 0.82);
+  --input-text: #ffffff;
+  --body-bg:
+    radial-gradient(circle at 72% 8%, rgba(52, 124, 255, 0.1), transparent 28rem),
+    linear-gradient(145deg, #090b10 0%, var(--bg) 48%, #050609 100%);
   --blue: #347cff;
   --blue-2: #78adff;
   --danger: #ff6c7d;
@@ -16,6 +23,30 @@
   --radius: 8px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3f7fb;
+  --panel: rgba(255, 255, 255, 0.76);
+  --panel-strong: rgba(255, 255, 255, 0.92);
+  --panel-soft: rgba(255, 255, 255, 0.56);
+  --line: rgba(17, 24, 39, 0.1);
+  --line-strong: rgba(17, 24, 39, 0.16);
+  --text: #111827;
+  --text-strong: #070b12;
+  --muted: rgba(17, 24, 39, 0.58);
+  --faint: rgba(17, 24, 39, 0.36);
+  --label: rgba(17, 24, 39, 0.72);
+  --heading-soft: rgba(17, 24, 39, 0.82);
+  --input-text: #111827;
+  --blue: #2167f3;
+  --blue-2: #2f73ea;
+  --danger: #d73750;
+  --shadow: 0 20px 70px rgba(36, 49, 74, 0.14);
+  --body-bg:
+    radial-gradient(circle at 74% 8%, rgba(52, 124, 255, 0.13), transparent 26rem),
+    linear-gradient(145deg, #f8fbff 0%, var(--bg) 48%, #eaf1f8 100%);
 }
 
 * {
@@ -27,14 +58,13 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background:
-    radial-gradient(circle at 72% 8%, rgba(52, 124, 255, 0.1), transparent 28rem),
-    linear-gradient(145deg, #090b10 0%, var(--bg) 48%, #050609 100%);
+  background: var(--body-bg);
   color: var(--text);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "PingFang SC", "Microsoft YaHei", sans-serif;
   letter-spacing: 0;
+  transition: background 180ms ease, color 180ms ease;
 }
 
 button,
@@ -113,7 +143,7 @@ button {
   height: 48px;
   border-radius: 7px;
   background: var(--panel-strong);
-  color: rgba(255, 255, 255, 0.76);
+  color: var(--label);
   font-size: 15px;
   font-weight: 700;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -134,7 +164,7 @@ button {
 
 .home-kicker {
   margin: 0;
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--heading-soft);
   font-size: 14px;
   font-weight: 760;
 }
@@ -170,7 +200,7 @@ button {
 }
 
 .home-route-name {
-  color: #fff;
+  color: var(--text-strong);
   font-size: 18px;
   font-weight: 800;
 }
@@ -204,7 +234,7 @@ button {
 }
 
 .direction-control button.is-active {
-  color: #fff;
+  color: var(--text-strong);
   background: rgba(52, 124, 255, 0.18);
   border-color: rgba(120, 173, 255, 0.38);
 }
@@ -291,7 +321,7 @@ button {
 
 .line-detail-meta strong {
   margin-top: 5px;
-  color: rgba(255, 255, 255, 0.86);
+  color: var(--text-strong);
   font-size: 12px;
   font-weight: 780;
 }
@@ -349,7 +379,7 @@ button {
 }
 
 .following-row strong {
-  color: #fff;
+  color: var(--text-strong);
   font-size: 14px;
   font-weight: 780;
 }
@@ -372,7 +402,7 @@ button {
 
 .section-title {
   margin: 4px 0 10px;
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--heading-soft);
   font-size: 14px;
   font-weight: 760;
 }
@@ -388,6 +418,29 @@ button {
   color: var(--faint);
   font-size: 12px;
   line-height: 1.6;
+}
+
+.theme-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.theme-switch button {
+  height: 44px;
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.theme-switch button.is-active {
+  color: #fff;
+  background: linear-gradient(135deg, #2d70ee, #3f86ff);
+  border-color: rgba(120, 173, 255, 0.42);
+  box-shadow: 0 14px 34px rgba(52, 124, 255, 0.2);
 }
 
 .preset-group {
@@ -478,7 +531,7 @@ button {
 }
 
 .field label {
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--label);
   font-size: 13px;
   font-weight: 720;
 }
@@ -490,7 +543,7 @@ button {
   border: 1px solid transparent;
   border-radius: 7px;
   padding: 0 14px;
-  color: #fff;
+  color: var(--input-text);
   background: var(--panel);
   outline: none;
 }
@@ -533,7 +586,7 @@ button {
 
 .station-result span {
   min-width: 0;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--text-strong);
   font-size: 13px;
   font-weight: 760;
   overflow: hidden;
@@ -645,6 +698,22 @@ button {
 .toast.is-visible {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+html[data-theme="light"] .home-route-card,
+html[data-theme="light"] .route-card,
+html[data-theme="light"] .empty-card,
+html[data-theme="light"] .following-row,
+html[data-theme="light"] .line-detail-meta div,
+html[data-theme="light"] .station-result {
+  box-shadow:
+    0 16px 46px rgba(36, 49, 74, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+html[data-theme="light"] .toast {
+  background: rgba(255, 255, 255, 0.94);
+  color: rgba(17, 24, 39, 0.82);
 }
 
 @keyframes spin {

@@ -8,6 +8,14 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="通勤助手" />
     <title>通勤助手</title>
+    <script>
+      (function () {
+        try {
+          var stored = JSON.parse(localStorage.getItem("commute_bus_routes_v2") || "{}");
+          if (stored.theme === "light") document.documentElement.dataset.theme = "light";
+        } catch (error) {}
+      })();
+    </script>
     <link rel="manifest" href="./manifest.json" />
     <link rel="stylesheet" href="./style.css" />
   </head>

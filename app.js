@@ -9,6 +9,7 @@
     emptyMessage: "",
     data: null,
     apiKey: "",
+    theme: "dark",
     cities: [],
     citiesLoaded: false,
     routes: [],
@@ -58,11 +59,12 @@
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
       return {
         apiKey: stored.apiKey || "",
+        theme: stored.theme === "light" ? "light" : "dark",
         routes: Array.isArray(stored.routes) ? stored.routes : [],
         activeId: stored.activeId || ""
       };
     } catch {
-      return { apiKey: "", routes: [], activeId: "" };
+      return { apiKey: "", theme: "dark", routes: [], activeId: "" };
     }
   }
 
@@ -71,10 +73,17 @@
       STORAGE_KEY,
       JSON.stringify({
         apiKey: state.apiKey,
+        theme: state.theme,
         routes: state.routes,
         activeId: state.activeId
       })
     );
+  }
+
+  function applyTheme() {
+    const theme = state.theme === "light" ? "light" : "dark";
+    document.documentElement.dataset.theme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f3f7fb" : "#07090d");
   }
 
   function getRoutes() {
@@ -388,6 +397,7 @@
 
   function renderTimelineSvg(route, realtime) {
     const bus = realtime.bus || {};
+    const palette = timelinePalette();
     const stopsRemaining = Number(bus.stops_remaining);
     const hasStops = Number.isFinite(stopsRemaining);
     const lineX = 70;
@@ -407,7 +417,7 @@
     const stationLabelY1 = stationY - 12;
     const stationLabelY2 = stationY + 12;
     const routeNodes = hasLineStops ? buildLineRouteNodes(lineStops, stationIndex, topY, stationY) : buildRouteNodes(topY, stationY, 5);
-    const followingMarkers = layoutFollowingMarkers(realtime.buses || [], bus, lineX, topY, stationY, stationIndex).join("");
+    const followingMarkers = layoutFollowingMarkers(realtime.buses || [], bus, lineX, topY, stationY, stationIndex, palette).join("");
 
     return `
       <svg class="bus-svg" viewBox="0 0 340 360" role="img" aria-label="车辆位置示意图">
@@ -420,9 +430,9 @@
             </feMerge>
           </filter>
         </defs>
-        <line x1="${lineX}" y1="${topY}" x2="${lineX}" y2="${bottomY}" stroke="rgba(255,255,255,.18)" stroke-width="3" stroke-linecap="round"/>
+        <line x1="${lineX}" y1="${topY}" x2="${lineX}" y2="${bottomY}" stroke="${palette.baseLine}" stroke-width="3" stroke-linecap="round"/>
         <line x1="${lineX}" y1="${busY}" x2="${lineX}" y2="${stationY}" stroke="#347cff" stroke-width="4" stroke-linecap="round" filter="url(#blueGlow)"/>
-        <line x1="${lineX}" y1="${stationY}" x2="${lineX}" y2="${bottomY}" stroke="rgba(255,255,255,.28)" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 13"/>
+        <line x1="${lineX}" y1="${stationY}" x2="${lineX}" y2="${bottomY}" stroke="${palette.futureLine}" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 13"/>
         ${routeNodes
           .map((node, index) =>
             timelineDot(lineX, node.y, index === routeNodes.length - 1 ? "routeActive" : node.variant || "route")
@@ -432,15 +442,40 @@
         ${timelineDot(lineX, bottomY, "muted")}
         ${timelineDot(lineX, busY, "primaryBus")}
         ${timelineBusIcon(lineX - 42, busY - 14, 1.15, "#347cff", true)}
-        ${timelineText(lineX + 22, topY + 4, start, "rgba(247,249,255,.48)", 12, 650)}
-        ${timelineText(lineX + 22, stationLabelY1, station, "#f7f9ff", 16, 780)}
-        ${timelineText(lineX + 22, stationLabelY2, "当前站", "rgba(247,249,255,.58)", 12, 650)}
-        ${timelineText(lineX + 22, bottomY - 10, `开往 ${terminal}`, "rgba(247,249,255,.72)", 13, 700)}
+        ${timelineText(lineX + 22, topY + 4, start, palette.faintText, 12, 650)}
+        ${timelineText(lineX + 22, stationLabelY1, station, palette.strongText, 16, 780)}
+        ${timelineText(lineX + 22, stationLabelY2, "当前站", palette.mutedText, 12, 650)}
+        ${timelineText(lineX + 22, bottomY - 10, `开往 ${terminal}`, palette.normalText, 13, 700)}
       </svg>
     `;
   }
 
-  function layoutFollowingMarkers(buses, mainBus, lineX, topY, stationY, stationIndex = -1) {
+  function timelinePalette() {
+    if (state.theme === "light") {
+      return {
+        baseLine: "rgba(17,24,39,.16)",
+        futureLine: "rgba(17,24,39,.24)",
+        strongText: "#111827",
+        normalText: "rgba(17,24,39,.7)",
+        mutedText: "rgba(17,24,39,.56)",
+        faintText: "rgba(17,24,39,.42)",
+        followingStroke: "rgba(33,103,243,.32)",
+        followingIcon: "rgba(17,24,39,.46)"
+      };
+    }
+    return {
+      baseLine: "rgba(255,255,255,.18)",
+      futureLine: "rgba(255,255,255,.28)",
+      strongText: "#f7f9ff",
+      normalText: "rgba(247,249,255,.72)",
+      mutedText: "rgba(247,249,255,.58)",
+      faintText: "rgba(247,249,255,.48)",
+      followingStroke: "rgba(220,232,255,.55)",
+      followingIcon: "rgba(247,249,255,.62)"
+    };
+  }
+
+  function layoutFollowingMarkers(buses, mainBus, lineX, topY, stationY, stationIndex = -1, palette = timelinePalette()) {
     const markerGap = 26;
     const mainStops = Number(mainBus?.stops_remaining);
     const markers = buses
@@ -464,8 +499,8 @@
       marker.y = Math.min(stationY - 22, Math.max(topY + 18, y));
       const xOffset = marker.isSameStop ? 18 : 14;
       return `
-        <circle cx="${lineX}" cy="${marker.y}" r="4.5" fill="rgba(120,173,255,.95)" stroke="rgba(220,232,255,.55)" stroke-width="1.5"/>
-        ${timelineBusIcon(lineX + xOffset, marker.y - 9, 0.78, "rgba(247,249,255,.62)", false)}
+        <circle cx="${lineX}" cy="${marker.y}" r="4.5" fill="rgba(120,173,255,.95)" stroke="${palette.followingStroke}" stroke-width="1.5"/>
+        ${timelineBusIcon(lineX + xOffset, marker.y - 9, 0.78, palette.followingIcon, false)}
       `;
     });
   }
@@ -557,6 +592,13 @@
     return `
       <section class="page">
         ${topbar("路线预设", { back: true })}
+        <section class="config-panel">
+          <h2 class="section-title">显示主题</h2>
+          <div class="theme-switch" aria-label="主题切换">
+            <button class="${state.theme === "dark" ? "is-active" : ""}" data-action="set-theme" data-theme="dark" type="button">深色</button>
+            <button class="${state.theme === "light" ? "is-active" : ""}" data-action="set-theme" data-theme="light" type="button">浅色</button>
+          </div>
+        </section>
         <section class="config-panel">
           <h2 class="section-title">接口密钥</h2>
           <div class="field">
@@ -660,6 +702,13 @@
   function updateApiKey(value) {
     state.apiKey = value.trim();
     persist();
+  }
+
+  function setTheme(theme) {
+    state.theme = theme === "light" ? "light" : "dark";
+    applyTheme();
+    persist();
+    render();
   }
 
   async function requestBusApi(payload) {
@@ -1171,6 +1220,10 @@
       saveSettingsAndGoHome();
     }
 
+    if (action === "set-theme") {
+      setTheme(actionEl.dataset.theme);
+    }
+
     if (action === "activate-route") {
       state.activeId = actionEl.dataset.id;
       persist();
@@ -1278,5 +1331,6 @@
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
 
+  applyTheme();
   render();
 })();
