@@ -9,6 +9,8 @@
     emptyMessage: "",
     data: null,
     apiKey: "",
+    cities: [],
+    citiesLoaded: false,
     routes: [],
     activeId: "",
     form: null
@@ -18,6 +20,7 @@
   const toast = document.getElementById("toast");
   let state = { ...DEFAULT_STATE, ...loadStoredState() };
   let toastTimer = 0;
+  let stationSearchTimer = 0;
   let pullStartY = 0;
   let pullStartedAtTop = false;
 
@@ -91,7 +94,11 @@
   function terminalForDirection(route, direction = route?.direction) {
     if (!route) return "";
     const key = String(Number(direction) === 2 ? 2 : 1);
-    return route.terminals?.[key] || (Number(route.direction) === Number(direction) ? route.terminal || "" : "");
+    return (
+      route.lineDetails?.[key]?.end ||
+      route.terminals?.[key] ||
+      (Number(route.direction) === Number(direction) ? route.terminal || "" : "")
+    );
   }
 
   function routeDisplayName(route, fallback) {
@@ -213,13 +220,15 @@
   }
 
   function renderDirectionControl(route) {
+    const forwardDetail = getLineDetail(route, 1);
     return `
       <div class="direction-control" aria-label="方向切换">
         ${[1, 2]
           .map((direction) => {
             const active = Number(route.direction) === direction ? "is-active" : "";
             const terminal = terminalForDirection(route, direction);
-            return `<button class="${active}" data-action="change-detail-direction" data-direction="${direction}">${escapeHtml(directionLabel(direction, terminal))}</button>`;
+            const disabled = direction === 2 && forwardDetail?.has_reverse === false ? " disabled" : "";
+            return `<button class="${active}" data-action="change-detail-direction" data-direction="${direction}"${disabled}>${escapeHtml(directionLabel(direction, terminal))}</button>`;
           })
           .join("")}
       </div>
@@ -289,6 +298,7 @@
     const terminal = state.data.line.terminal || terminalForDirection(route) || "";
     const terminalText = directionLabel(route.direction, terminal);
     const followingBuses = Array.isArray(state.data.buses) ? state.data.buses.slice(1, 4) : [];
+    const lineDetail = state.data.lineDetail || getLineDetail(route);
 
     return `
       <div class="route-meta">${escapeHtml(state.data.line.line || route.line)} · ${escapeHtml(route.station)} · ${escapeHtml(terminalText)}</div>
@@ -300,10 +310,35 @@
         </div>
         <div class="subline">距当前站 <strong>${escapeHtml(stops)}</strong> 站 · ${escapeHtml(bus.bus_id || bus.status || "实时位置")}</div>
       </section>
+      ${renderLineDetailMeta(lineDetail)}
       <section class="timeline-wrap" aria-label="公交路线示意图">
         ${renderTimelineSvg(route, state.data)}
       </section>
       ${renderFollowingBuses(followingBuses)}
+    `;
+  }
+
+  function renderLineDetailMeta(lineDetail) {
+    if (!lineDetail) return "";
+    const time = lineDetail.first_time && lineDetail.last_time ? `${lineDetail.first_time}-${lineDetail.last_time}` : "暂无";
+    const price = lineDetail.price || "暂无";
+    const stops = lineDetail.stop_count || lineDetail.stops?.length || "--";
+
+    return `
+      <section class="line-detail-meta" aria-label="线路基础信息">
+        <div>
+          <span>首末班</span>
+          <strong>${escapeHtml(time)}</strong>
+        </div>
+        <div>
+          <span>票价</span>
+          <strong>${escapeHtml(price)}</strong>
+        </div>
+        <div>
+          <span>全程</span>
+          <strong>${escapeHtml(stops)} 站</strong>
+        </div>
+      </section>
     `;
   }
 
@@ -355,18 +390,24 @@
     const bus = realtime.bus || {};
     const stopsRemaining = Number(bus.stops_remaining);
     const hasStops = Number.isFinite(stopsRemaining);
-    const safeStops = hasStops ? Math.max(0, Math.min(stopsRemaining, 7)) : 3;
     const lineX = 70;
     const topY = 34;
     const stationY = 218;
     const bottomY = 334;
-    const busY = hasStops ? Math.max(topY + 26, stationY - safeStops * 24 - 12) : 118;
+    const lineDetail = realtime.lineDetail || getLineDetail(route);
+    const lineStops = Array.isArray(lineDetail?.stops) ? lineDetail.stops : [];
+    const stationIndex = findStationIndex(lineStops, route.station);
+    const hasLineStops = lineStops.length > 1 && stationIndex >= 0;
+    const busY = hasLineStops
+      ? calculateBusY(stopsRemaining, stationIndex, topY, stationY)
+      : calculateFallbackBusY(stopsRemaining, hasStops, topY, stationY);
     const station = compactText(route.station || "当前站", 11);
-    const terminal = compactText(realtime.line.terminal || route.terminal || "终点方向", 12);
+    const terminal = compactText(lineDetail?.end || realtime.line.terminal || route.terminal || "终点方向", 12);
+    const start = compactText(lineDetail?.start || lineStops[0]?.name || "起点", 12);
     const stationLabelY1 = stationY - 12;
     const stationLabelY2 = stationY + 12;
-    const routeNodes = buildRouteNodes(topY, stationY, 5);
-    const followingMarkers = layoutFollowingMarkers(realtime.buses || [], bus, lineX, topY, stationY).join("");
+    const routeNodes = hasLineStops ? buildLineRouteNodes(lineStops, stationIndex, topY, stationY) : buildRouteNodes(topY, stationY, 5);
+    const followingMarkers = layoutFollowingMarkers(realtime.buses || [], bus, lineX, topY, stationY, stationIndex).join("");
 
     return `
       <svg class="bus-svg" viewBox="0 0 340 360" role="img" aria-label="车辆位置示意图">
@@ -384,13 +425,14 @@
         <line x1="${lineX}" y1="${stationY}" x2="${lineX}" y2="${bottomY}" stroke="rgba(255,255,255,.28)" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 13"/>
         ${routeNodes
           .map((node, index) =>
-            timelineDot(lineX, node.y, index === routeNodes.length - 1 ? "routeActive" : "route")
+            timelineDot(lineX, node.y, index === routeNodes.length - 1 ? "routeActive" : node.variant || "route")
           )
           .join("")}
         ${followingMarkers}
         ${timelineDot(lineX, bottomY, "muted")}
         ${timelineDot(lineX, busY, "primaryBus")}
         ${timelineBusIcon(lineX - 42, busY - 14, 1.15, "#347cff", true)}
+        ${timelineText(lineX + 22, topY + 4, start, "rgba(247,249,255,.48)", 12, 650)}
         ${timelineText(lineX + 22, stationLabelY1, station, "#f7f9ff", 16, 780)}
         ${timelineText(lineX + 22, stationLabelY2, "当前站", "rgba(247,249,255,.58)", 12, 650)}
         ${timelineText(lineX + 22, bottomY - 10, `开往 ${terminal}`, "rgba(247,249,255,.72)", 13, 700)}
@@ -398,15 +440,17 @@
     `;
   }
 
-  function layoutFollowingMarkers(buses, mainBus, lineX, topY, stationY) {
+  function layoutFollowingMarkers(buses, mainBus, lineX, topY, stationY, stationIndex = -1) {
     const markerGap = 26;
     const mainStops = Number(mainBus?.stops_remaining);
     const markers = buses
       .slice(1, 4)
       .map((bus, index) => {
         const stops = Number(bus?.stops_remaining);
-        const safeStops = Number.isFinite(stops) ? Math.max(0, Math.min(stops, 7)) : index + 3;
-        const rawY = Math.max(topY + 18, stationY - safeStops * 24 - 12);
+        const rawY =
+          stationIndex > 0
+            ? calculateBusY(stops, stationIndex, topY, stationY)
+            : calculateFallbackBusY(stops, Number.isFinite(stops), topY, stationY);
         return {
           y: rawY,
           isSameStop: Number.isFinite(mainStops) && Number.isFinite(stops) && mainStops === stops
@@ -423,6 +467,48 @@
         <circle cx="${lineX}" cy="${marker.y}" r="4.5" fill="rgba(120,173,255,.95)" stroke="rgba(220,232,255,.55)" stroke-width="1.5"/>
         ${timelineBusIcon(lineX + xOffset, marker.y - 9, 0.78, "rgba(247,249,255,.62)", false)}
       `;
+    });
+  }
+
+  function findStationIndex(stops, stationName) {
+    const target = normalizeStationName(stationName);
+    if (!target || !Array.isArray(stops)) return -1;
+    let index = stops.findIndex((stop) => normalizeStationName(stop.name) === target);
+    if (index >= 0) return index;
+    index = stops.findIndex((stop) => normalizeStationName(stop.name).includes(target) || target.includes(normalizeStationName(stop.name)));
+    return index;
+  }
+
+  function normalizeStationName(name) {
+    return String(name || "")
+      .replace(/[（(].*?[）)]/g, "")
+      .replace(/公交站|站/g, "")
+      .trim();
+  }
+
+  function calculateBusY(stopsRemaining, stationIndex, topY, stationY) {
+    const stops = Number(stopsRemaining);
+    if (!Number.isFinite(stops) || stationIndex <= 0) return topY + (stationY - topY) * 0.45;
+    const busIndex = Math.max(0, Math.min(stationIndex, stationIndex - stops));
+    const ratio = busIndex / stationIndex;
+    return topY + (stationY - topY) * ratio;
+  }
+
+  function calculateFallbackBusY(stopsRemaining, hasStops, topY, stationY) {
+    const safeStops = hasStops ? Math.max(0, Math.min(Number(stopsRemaining), 7)) : 3;
+    return hasStops ? Math.max(topY + 26, stationY - safeStops * 24 - 12) : 118;
+  }
+
+  function buildLineRouteNodes(stops, stationIndex, startY, endY) {
+    const visibleStops = stops.slice(0, stationIndex + 1);
+    if (visibleStops.length <= 1) return [{ y: endY, variant: "routeActive" }];
+    return visibleStops.map((stop, index) => {
+      const ratio = index / (visibleStops.length - 1);
+      return {
+        name: stop.name,
+        y: startY + (endY - startY) * ratio,
+        variant: visibleStops.length > 16 ? "routeTiny" : "route"
+      };
     });
   }
 
@@ -452,6 +538,7 @@
   function timelineDot(x, y, variant) {
     const dots = {
       route: { r: 4.5, fill: "rgba(52,124,255,.72)", stroke: "rgba(220,232,255,.45)", width: 1.5 },
+      routeTiny: { r: 3.2, fill: "rgba(52,124,255,.7)", stroke: "rgba(220,232,255,.25)", width: 1 },
       routeActive: { r: 7.5, fill: "#347cff", stroke: "#dce8ff", width: 3 },
       active: { r: 8, fill: "#347cff", stroke: "#dce8ff", width: 3 },
       primaryBus: { r: 7, fill: "#347cff", stroke: "#dce8ff", width: 3 },
@@ -529,11 +616,15 @@
         <form class="form" id="routeForm">
           <div class="field">
             <label for="city">城市名称</label>
-            <input id="city" name="city" type="text" autocomplete="address-level2" placeholder="请输入官方城市名，例如 长沙" required />
+            <input id="city" name="city" type="text" autocomplete="address-level2" list="cityOptions" placeholder="请输入官方城市名，例如 长沙" required />
+            <datalist id="cityOptions">
+              ${state.cities.map((city) => `<option value="${escapeHtml(city.name)}">${escapeHtml(city.pinyin || "")}</option>`).join("")}
+            </datalist>
           </div>
           <div class="field">
             <label for="station">站点名称</label>
             <input id="station" name="station" type="text" placeholder="请输入官方站点名" required />
+            <div class="station-search" id="stationSearch" aria-live="polite"></div>
           </div>
           <div class="field">
             <label for="line">线路名称</label>
@@ -557,6 +648,7 @@
     form.station.value = formRoute.station || "";
     form.line.value = formRoute.line || "";
     form.note.value = formRoute.note || "";
+    renderStationSearchHint();
   }
 
   function bindSettingsValues() {
@@ -568,6 +660,135 @@
   function updateApiKey(value) {
     state.apiKey = value.trim();
     persist();
+  }
+
+  async function requestBusApi(payload) {
+    const response = await fetch(API_BASE_URL, {
+      method: "POST",
+      headers: buildApiHeaders(),
+      body: JSON.stringify(payload)
+    });
+
+    const payloadBody = await response.json().catch(() => ({}));
+    if (!response.ok || payloadBody.code !== 0) {
+      throw new Error(payloadBody.msg || `请求失败：${response.status}`);
+    }
+    return payloadBody.data;
+  }
+
+  async function loadCities() {
+    if (state.citiesLoaded) return;
+
+    try {
+      const data = await requestBusApi({ type: "cities" });
+      state.cities = normalizeCities(data);
+      state.citiesLoaded = true;
+      if (state.view === "form") render();
+    } catch {
+      state.citiesLoaded = true;
+    }
+  }
+
+  function normalizeCities(data) {
+    const cities = Array.isArray(data?.cities) ? data.cities : [];
+    return cities
+      .map((city) => ({
+        name: String(city.name || "").trim(),
+        pinyin: String(city.pinyin || "").trim()
+      }))
+      .filter((city) => city.name);
+  }
+
+  function scheduleStationSearch() {
+    clearTimeout(stationSearchTimer);
+    stationSearchTimer = setTimeout(searchStationsFromForm, 420);
+  }
+
+  async function searchStationsFromForm() {
+    const formRoute = state.form?.route;
+    if (!formRoute) return;
+
+    const city = String(formRoute.city || "").trim();
+    const keyword = String(formRoute.station || "").trim();
+    if (!city || keyword.length < 2) {
+      renderStationSearchHint();
+      return;
+    }
+
+    renderStationSearchState("loading");
+
+    try {
+      const data = await requestBusApi({ type: "stations", city, station: keyword });
+      renderStationSearchResults(normalizeStations(data));
+    } catch (error) {
+      renderStationSearchState("error", error.message || "站点搜索失败");
+    }
+  }
+
+  function normalizeStations(data) {
+    const stations = Array.isArray(data?.stations) ? data.stations : [];
+    return stations
+      .map((station) => ({
+        name: String(station.name || "").trim(),
+        kind: String(station.kind || "").trim(),
+        queryable: station.queryable !== false,
+        lat: station.lat,
+        lng: station.lng
+      }))
+      .filter((station) => station.name);
+  }
+
+  function renderStationSearchHint() {
+    const box = document.getElementById("stationSearch");
+    if (!box) return;
+    const city = state.form?.route?.city || "";
+    const station = state.form?.route?.station || "";
+    if (!city) {
+      box.innerHTML = `<p>先填写城市，再搜索官方站名。</p>`;
+      return;
+    }
+    if (!station || station.length < 2) {
+      box.innerHTML = `<p>输入至少 2 个字，自动搜索可查询站点。</p>`;
+      return;
+    }
+    box.innerHTML = "";
+  }
+
+  function renderStationSearchState(type, message = "") {
+    const box = document.getElementById("stationSearch");
+    if (!box) return;
+    if (type === "loading") {
+      box.innerHTML = `<p>正在搜索官方站名...</p>`;
+      return;
+    }
+    box.innerHTML = `<p>${escapeHtml(message || "暂无搜索结果")}</p>`;
+  }
+
+  function renderStationSearchResults(stations) {
+    const box = document.getElementById("stationSearch");
+    if (!box) return;
+    if (!stations.length) {
+      renderStationSearchState("empty", "没有找到匹配的官方站名");
+      return;
+    }
+
+    box.innerHTML = `
+      <div class="station-result-list">
+        ${stations
+          .slice(0, 6)
+          .map((station) => {
+            const disabled = station.queryable ? "" : " disabled";
+            const kind = station.kind ? `${station.kind}${station.queryable ? "" : " · 不支持到站"}` : "";
+            return `
+              <button type="button" class="station-result"${disabled} data-action="select-station" data-name="${escapeHtml(station.name)}">
+                <span>${escapeHtml(station.name)}</span>
+                <em>${escapeHtml(kind || "可查询")}</em>
+              </button>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
   }
 
   async function loadRealtime() {
@@ -585,31 +806,31 @@
     setState({ loading: true, error: "", emptyMessage: "" });
 
     try {
-      const response = await fetch(API_BASE_URL, {
-        method: "POST",
-        headers: buildApiHeaders(),
-        body: JSON.stringify({
+      const direction = Number(route.direction || 1);
+      const [realtimeResult, lineResult] = await Promise.allSettled([
+        requestBusApi({
           type: "query",
           city: route.city,
           station: route.station,
           line: route.line,
-          direction: Number(route.direction || 1)
-        })
-      });
+          direction
+        }),
+        fetchLineDetail(route, direction)
+      ]);
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.code !== 0) {
-        throw new Error(payload.msg || `请求失败：${response.status}`);
+      if (realtimeResult.status === "rejected") {
+        throw realtimeResult.reason;
       }
 
-      const realtime = normalizeRealtime(payload.data, route);
+      const lineDetail = lineResult.status === "fulfilled" ? lineResult.value : getLineDetail(route, direction);
+      const realtime = normalizeRealtime(realtimeResult.value, route, lineDetail);
       if (!realtime) {
         setState({ loading: false, data: null, error: "", emptyMessage: "当前线路暂无车辆到站信息" });
         return;
       }
 
       syncRouteTerminal(route.id, route.direction, realtime.line.terminal);
-      setState({ loading: false, data: realtime, error: "", emptyMessage: "" });
+      setState({ loading: false, data: { ...realtime, lineDetail }, error: "", emptyMessage: "" });
     } catch (error) {
       setState({ loading: false, error: error.message || "接口请求失败，请稍后重试", emptyMessage: "" });
     }
@@ -619,41 +840,107 @@
     const route = getRoutes().find((item) => item.id === routeId);
     if (!route || !state.apiKey) return;
 
-    const directions = [1, 2].filter((direction) => !terminalForDirection(route, direction));
+    const directions = [1, 2].filter((direction) => !getLineDetail(route, direction));
     if (!directions.length) return;
 
     const results = await Promise.allSettled(
-      directions.map(async (direction) => {
-        const response = await fetch(API_BASE_URL, {
-          method: "POST",
-          headers: buildApiHeaders(),
-          body: JSON.stringify({
-            type: "line",
-            city: route.city,
-            line: route.line,
-            direction
-          })
-        });
-
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.code !== 0) return null;
-        return {
-          direction,
-          terminal: extractTerminal(payload.data)
-        };
-      })
+      directions.map((direction) => fetchLineDetail(route, direction))
     );
 
     const terminals = {};
     results.forEach((result) => {
-      if (result.status === "fulfilled" && result.value?.terminal) {
-        terminals[String(result.value.direction)] = result.value.terminal;
+      if (result.status === "fulfilled" && result.value?.end) {
+        terminals[String(result.value.direction)] = result.value.end;
       }
     });
 
     if (Object.keys(terminals).length) {
       syncRouteTerminals(routeId, terminals);
     }
+  }
+
+  async function fetchLineDetail(route, direction) {
+    if (!route || !state.apiKey) return getLineDetail(route, direction);
+    const cached = getLineDetail(route, direction);
+    if (cached) return cached;
+
+    const data = await requestBusApi({
+      type: "line",
+      city: route.city,
+      line: route.line,
+      direction
+    });
+    const detail = normalizeLineDetail(data);
+    if (detail) syncRouteLineDetail(route.id, direction, detail);
+    return detail;
+  }
+
+  function getLineDetail(route, direction = route?.direction) {
+    if (!route) return null;
+    const key = String(Number(direction) === 2 ? 2 : 1);
+    return route.lineDetails?.[key] || null;
+  }
+
+  function normalizeLineDetail(data) {
+    if (!data) return null;
+    const stops = normalizeLineStops(data.stops || data.stations || data.station_list || data.stationList);
+    return {
+      city: String(data.city || "").trim(),
+      line: String(data.line || data.keyword || "").trim(),
+      direction: Number(data.direction) === 2 ? 2 : 1,
+      start: String(data.start || stops[0]?.name || "").trim(),
+      end: String(data.end || data.terminal || stops[stops.length - 1]?.name || "").trim(),
+      price: String(data.price || "").trim(),
+      first_time: String(data.first_time || data.firstTime || "").trim(),
+      last_time: String(data.last_time || data.lastTime || "").trim(),
+      stop_count: Number(data.stop_count || stops.length || 0),
+      has_reverse: data.has_reverse !== false,
+      updated_at: String(data.updated_at || "").trim(),
+      stops
+    };
+  }
+
+  function normalizeLineStops(stops) {
+    if (!Array.isArray(stops)) return [];
+    return stops
+      .map((stop, index) => {
+        if (typeof stop === "string") {
+          return { order: index + 1, name: stop, lat: null, lng: null };
+        }
+        return {
+          order: Number(stop.order || index + 1),
+          name: String(stop.name || stop.station || stop.station_name || stop.stationName || "").trim(),
+          lat: stop.lat ?? null,
+          lng: stop.lng ?? null
+        };
+      })
+      .filter((stop) => stop.name);
+  }
+
+  function syncRouteLineDetail(routeId, direction, detail) {
+    if (!routeId || !detail) return;
+    const key = String(Number(direction) === 2 ? 2 : 1);
+    let changed = false;
+
+    state.routes = getRoutes().map((item) => {
+      if (item.id !== routeId) return item;
+      const lineDetails = { ...(item.lineDetails || {}), [key]: detail };
+      const terminals = { ...(item.terminals || {}) };
+      if (detail.end) terminals[key] = detail.end;
+      const activeKey = String(Number(item.direction) === 2 ? 2 : 1);
+      const terminal = terminals[activeKey] || item.terminal || "";
+      changed = true;
+      return {
+        ...item,
+        line: detail.line || item.line,
+        terminal,
+        terminals,
+        lineDetails
+      };
+    });
+
+    if (!changed) return;
+    persist();
   }
 
   function extractTerminal(data) {
@@ -724,14 +1011,15 @@
   }
 
   function buildApiHeaders() {
-    return {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${state.apiKey}`,
-      "X-API-Key": state.apiKey
-    };
+    const headers = { "Content-Type": "application/json" };
+    if (state.apiKey) {
+      headers.Authorization = `Bearer ${state.apiKey}`;
+      headers["X-API-Key"] = state.apiKey;
+    }
+    return headers;
   }
 
-  function normalizeRealtime(data, route) {
+  function normalizeRealtime(data, route, lineDetail = null) {
     const lines = Array.isArray(data?.lines) ? data.lines : [];
     const cleanLine = String(route.line || "").replace(/路$/, "");
     const matchedLine =
@@ -757,7 +1045,11 @@
     const bus = buses[0] || matchedLine.buses[0];
     return {
       raw: data,
-      line: matchedLine,
+      line: {
+        ...matchedLine,
+        terminal: matchedLine.terminal || lineDetail?.end || "",
+        price: matchedLine.price || lineDetail?.price || ""
+      },
       bus,
       buses
     };
@@ -768,9 +1060,12 @@
     setState({
       view: "form",
       form: {
-        route: existing ? { ...existing } : { id: "", city: "", station: "", line: "", note: "", direction: 1, terminals: {} }
+        route: existing
+          ? { ...existing }
+          : { id: "", city: "", station: "", line: "", note: "", direction: 1, terminals: {}, lineDetails: {} }
       }
     });
+    loadCities();
   }
 
   function saveForm(formElement) {
@@ -782,7 +1077,8 @@
       line: formElement.line.value.trim(),
       note: formElement.note.value.trim(),
       direction: Number(state.form.route.direction || 1),
-      terminals: state.form.route.terminals || {}
+      terminals: state.form.route.terminals || {},
+      lineDetails: state.form.route.lineDetails || {}
     };
 
     if (!route.city || !route.station || !route.line) {
@@ -804,6 +1100,7 @@
     persist();
     render();
     showToast("路线已保存");
+    preloadRouteDirections(route.id);
   }
 
   function deleteRoute(id) {
@@ -882,6 +1179,13 @@
       loadRealtime();
     }
 
+    if (action === "select-station") {
+      if (!state.form?.route || actionEl.disabled) return;
+      state.form.route.station = actionEl.dataset.name || "";
+      bindFormValues();
+      renderStationSearchState("selected", "已选择官方站名");
+    }
+
     if (action === "add-route") {
       openForm("");
     }
@@ -896,7 +1200,7 @@
 
     if (action === "change-detail-direction") {
       const route = getActiveRoute();
-      if (route && Number(route.direction) !== Number(actionEl.dataset.direction)) {
+      if (route && !actionEl.disabled && Number(route.direction) !== Number(actionEl.dataset.direction)) {
         changeRouteDirection(route.id, actionEl.dataset.direction);
       }
     }
@@ -921,8 +1225,30 @@
   });
 
   app.addEventListener("input", (event) => {
-    if (event.target.id !== "apiKey") return;
-    updateApiKey(event.target.value);
+    if (event.target.id === "apiKey") {
+      updateApiKey(event.target.value);
+      return;
+    }
+
+    if (event.target.form?.id !== "routeForm" || !state.form?.route) return;
+    const name = event.target.name;
+    if (!["city", "station", "line", "note"].includes(name)) return;
+    const previousValue = state.form.route[name];
+    state.form.route[name] = event.target.value;
+
+    if ((name === "city" || name === "line") && previousValue !== event.target.value) {
+      state.form.route.terminal = "";
+      state.form.route.terminals = {};
+      state.form.route.lineDetails = {};
+    }
+
+    if (name === "city") {
+      state.form.route.station = document.getElementById("station")?.value || state.form.route.station;
+      scheduleStationSearch();
+    }
+    if (name === "station") {
+      scheduleStationSearch();
+    }
   });
 
   window.addEventListener(

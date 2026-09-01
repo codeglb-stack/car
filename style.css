@@ -209,6 +209,11 @@ button {
   border-color: rgba(120, 173, 255, 0.38);
 }
 
+.direction-control button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
 .route-meta {
   min-height: 20px;
   margin-bottom: 24px;
@@ -252,6 +257,43 @@ button {
 
 .subline strong {
   color: var(--blue-2);
+}
+
+.line-detail-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: -8px 0 20px;
+}
+
+.line-detail-meta div {
+  min-width: 0;
+  padding: 10px 8px;
+  border-radius: 7px;
+  background: var(--panel-soft);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  text-align: center;
+}
+
+.line-detail-meta span,
+.line-detail-meta strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.line-detail-meta span {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.line-detail-meta strong {
+  margin-top: 5px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+  font-weight: 780;
 }
 
 .timeline-wrap {
@@ -457,6 +499,63 @@ button {
 .field select:focus {
   border-color: rgba(120, 173, 255, 0.5);
   box-shadow: 0 0 0 4px rgba(52, 124, 255, 0.12);
+}
+
+.station-search {
+  min-height: 22px;
+}
+
+.station-search p {
+  margin: 0;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.station-result-list {
+  display: grid;
+  gap: 8px;
+}
+
+.station-result {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: var(--panel-soft);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+}
+
+.station-result span {
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+  font-weight: 760;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.station-result em {
+  flex: 0 0 auto;
+  max-width: 112px;
+  color: var(--blue-2);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 720;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.station-result:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 .primary-button {
