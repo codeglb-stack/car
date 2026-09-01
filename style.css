@@ -191,6 +191,66 @@ button {
   transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
 }
 
+.install-card {
+  display: grid;
+  gap: 14px;
+  margin-top: auto;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+}
+
+.install-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.install-copy strong {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.install-copy span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.install-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.install-primary,
+.install-hide {
+  height: 38px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.install-primary {
+  background: rgba(52, 124, 255, 0.18);
+  color: var(--blue-2);
+  border: 1px solid rgba(120, 173, 255, 0.34);
+}
+
+.install-hide {
+  padding: 0 10px;
+  background: transparent;
+  color: var(--faint);
+}
+
+.install-hide.full {
+  width: 100%;
+  margin-top: 4px;
+}
+
 .home-route-name,
 .home-route-sub {
   min-width: 0;
@@ -441,6 +501,17 @@ button {
   background: linear-gradient(135deg, #2d70ee, #3f86ff);
   border-color: rgba(120, 173, 255, 0.42);
   box-shadow: 0 14px 34px rgba(52, 124, 255, 0.2);
+}
+
+.restore-install {
+  width: 100%;
+  height: 44px;
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--blue-2);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 780;
 }
 
 .preset-group {
@@ -711,13 +782,59 @@ button {
   transform: translate(-50%, 0);
 }
 
+.install-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  align-items: end;
+  padding: 18px 18px calc(18px + var(--safe-bottom));
+  background: rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(12px);
+}
+
+.install-dialog {
+  width: min(100%, 430px);
+  margin: 0 auto;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: rgba(18, 21, 28, 0.96);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow);
+}
+
+.install-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.install-dialog-head strong {
+  color: var(--text-strong);
+  font-size: 16px;
+  font-weight: 820;
+}
+
+.install-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding-left: 22px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 html[data-theme="light"] .home-route-card,
 html[data-theme="light"] .route-card,
 html[data-theme="light"] .empty-card,
 html[data-theme="light"] .following-row,
 html[data-theme="light"] .line-detail-meta div,
 html[data-theme="light"] .station-result,
-html[data-theme="light"] .line-result {
+html[data-theme="light"] .line-result,
+html[data-theme="light"] .install-card {
   box-shadow:
     0 16px 46px rgba(36, 49, 74, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.86);
@@ -726,6 +843,10 @@ html[data-theme="light"] .line-result {
 html[data-theme="light"] .toast {
   background: rgba(255, 255, 255, 0.94);
   color: rgba(17, 24, 39, 0.82);
+}
+
+html[data-theme="light"] .install-dialog {
+  background: rgba(255, 255, 255, 0.96);
 }
 
 @keyframes spin {

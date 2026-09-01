@@ -10,6 +10,9 @@
     data: null,
     apiKey: "",
     theme: "dark",
+    installHidden: false,
+    installReady: false,
+    installGuideVisible: false,
     cities: [],
     citiesLoaded: false,
     routes: [],
@@ -20,6 +23,7 @@
   const app = document.getElementById("app");
   const toast = document.getElementById("toast");
   let state = { ...DEFAULT_STATE, ...loadStoredState() };
+  let deferredInstallPrompt = null;
   let toastTimer = 0;
   let stationSearchTimer = 0;
   let pullStartY = 0;
@@ -36,7 +40,8 @@
       trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15"/>',
       refresh: '<path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v6h-6"/>',
       edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
-      alert: '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.5 2.5 17a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 3.5a2 2 0 0 0-3.4 0Z"/>'
+      alert: '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.5 2.5 17a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 3.5a2 2 0 0 0-3.4 0Z"/>',
+      close: '<path d="M18 6 6 18M6 6l12 12"/>'
     };
     return `<svg class="${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
   }
@@ -60,11 +65,12 @@
       return {
         apiKey: stored.apiKey || "",
         theme: stored.theme === "light" ? "light" : "dark",
+        installHidden: stored.installHidden === true,
         routes: Array.isArray(stored.routes) ? stored.routes : [],
         activeId: stored.activeId || ""
       };
     } catch {
-      return { apiKey: "", theme: "dark", routes: [], activeId: "" };
+      return { apiKey: "", theme: "dark", installHidden: false, routes: [], activeId: "" };
     }
   }
 
@@ -74,6 +80,7 @@
       JSON.stringify({
         apiKey: state.apiKey,
         theme: state.theme,
+        installHidden: state.installHidden,
         routes: state.routes,
         activeId: state.activeId
       })
@@ -129,6 +136,55 @@
     toastTimer = setTimeout(() => toast.classList.remove("is-visible"), 2200);
   }
 
+  function isStandalone() {
+    return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  }
+
+  function isIos() {
+    const ua = window.navigator.userAgent || "";
+    return /iphone|ipad|ipod/i.test(ua) || (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
+  }
+
+  function shouldShowInstallEntry() {
+    return !state.installHidden && !isStandalone();
+  }
+
+  async function handleInstallApp() {
+    if (isStandalone()) {
+      showToast("已经在桌面模式中打开");
+      return;
+    }
+
+    if (deferredInstallPrompt) {
+      const promptEvent = deferredInstallPrompt;
+      deferredInstallPrompt = null;
+      state.installReady = false;
+      promptEvent.prompt();
+      const choice = await promptEvent.userChoice.catch(() => null);
+      if (choice?.outcome === "accepted") {
+        state.installHidden = true;
+        state.installGuideVisible = false;
+        persist();
+        render();
+        showToast("已添加到桌面");
+        return;
+      }
+      render();
+      showToast("已取消添加");
+      return;
+    }
+
+    setState({ installGuideVisible: true });
+  }
+
+  function hideInstallEntry() {
+    state.installHidden = true;
+    state.installGuideVisible = false;
+    persist();
+    render();
+    showToast("已永久隐藏");
+  }
+
   function topbar(title, options = {}) {
     const left = options.back
       ? `<button class="icon-button" data-action="back" aria-label="返回">${icon("back")}</button>`
@@ -149,24 +205,29 @@
   }
 
   function render() {
+    let html = "";
     if (state.view === "settings") {
-      app.innerHTML = renderSettings();
+      html = renderSettings();
+      app.innerHTML = html + renderInstallGuide();
       bindSettingsValues();
       return;
     }
 
     if (state.view === "form") {
-      app.innerHTML = renderForm();
+      html = renderForm();
+      app.innerHTML = html + renderInstallGuide();
       bindFormValues();
       return;
     }
 
     if (state.view === "detail") {
-      app.innerHTML = renderDetail();
+      html = renderDetail();
+      app.innerHTML = html + renderInstallGuide();
       return;
     }
 
-    app.innerHTML = renderHome();
+    html = renderHome();
+    app.innerHTML = html + renderInstallGuide();
   }
 
   function renderHome() {
@@ -183,6 +244,7 @@
               <button class="primary-button" data-action="settings">添加线路</button>
             </div>
           </div>
+          ${renderInstallCard()}
         </section>
       `;
     }
@@ -195,7 +257,54 @@
           <button class="secondary-button" data-action="settings">管理</button>
         </div>
         ${renderRouteCards()}
+        ${renderInstallCard()}
       </section>
+    `;
+  }
+
+  function renderInstallCard() {
+    if (!shouldShowInstallEntry()) return "";
+    const isApple = isIos();
+    const title = isApple ? "添加到主屏幕" : "添加到桌面";
+    const text = isApple ? "从 Safari 分享菜单添加，之后可以像 App 一样打开。" : "固定到手机桌面，通勤时少一步打开。";
+    const cta = deferredInstallPrompt ? "立即添加" : isApple ? "查看步骤" : "添加方式";
+
+    return `
+      <section class="install-card" aria-label="${escapeHtml(title)}">
+        <div class="install-copy">
+          <strong>${escapeHtml(title)}</strong>
+          <span>${escapeHtml(text)}</span>
+        </div>
+        <div class="install-actions">
+          <button class="install-primary" data-action="install-app" type="button">${escapeHtml(cta)}</button>
+          <button class="install-hide" data-action="hide-install" type="button">永久隐藏</button>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderInstallGuide() {
+    if (!state.installGuideVisible) return "";
+    const isApple = isIos();
+    const title = isApple ? "iOS 添加到主屏幕" : "添加到桌面";
+    const steps = isApple
+      ? ["使用 Safari 打开当前页面", "点击底部分享按钮", "选择“添加到主屏幕”"]
+      : ["打开浏览器菜单", "选择“添加到主屏幕”或“安装应用”", "确认后从桌面打开"];
+
+    return `
+      <div class="install-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+        <div class="install-dialog">
+          <div class="install-dialog-head">
+            <strong>${escapeHtml(title)}</strong>
+            <button class="icon-button" data-action="close-install-guide" aria-label="关闭" type="button">${icon("close")}</button>
+          </div>
+          <ol class="install-steps">
+            ${steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+          </ol>
+          <button class="primary-button" data-action="close-install-guide" type="button">知道了</button>
+          <button class="install-hide full" data-action="hide-install" type="button">永久隐藏这个入口</button>
+        </div>
+      </div>
     `;
   }
 
@@ -600,6 +709,7 @@
             <button class="${state.theme === "light" ? "is-active" : ""}" data-action="set-theme" data-theme="light" type="button">浅色</button>
           </div>
         </section>
+        ${renderInstallRestorePanel()}
         <section class="config-panel">
           <h2 class="section-title">接口密钥</h2>
           <div class="field">
@@ -610,6 +720,16 @@
         </section>
         ${renderPresetList()}
         <button class="primary-button" data-action="save-settings">保存并返回</button>
+      </section>
+    `;
+  }
+
+  function renderInstallRestorePanel() {
+    if (!state.installHidden || isStandalone()) return "";
+    return `
+      <section class="config-panel">
+        <h2 class="section-title">桌面入口</h2>
+        <button class="restore-install" data-action="restore-install" type="button">恢复添加到桌面入口</button>
       </section>
     `;
   }
@@ -1364,6 +1484,25 @@
       setTheme(actionEl.dataset.theme);
     }
 
+    if (action === "install-app") {
+      handleInstallApp();
+    }
+
+    if (action === "close-install-guide") {
+      setState({ installGuideVisible: false });
+    }
+
+    if (action === "hide-install") {
+      hideInstallEntry();
+    }
+
+    if (action === "restore-install") {
+      state.installHidden = false;
+      persist();
+      render();
+      showToast("已恢复入口");
+    }
+
     if (action === "activate-route") {
       state.activeId = actionEl.dataset.id;
       persist();
@@ -1478,6 +1617,23 @@
     },
     { passive: true }
   );
+
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    state.installReady = true;
+    if (state.view === "home" && shouldShowInstallEntry()) render();
+  });
+
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    state.installHidden = true;
+    state.installReady = false;
+    state.installGuideVisible = false;
+    persist();
+    render();
+    showToast("已添加到桌面");
+  });
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
