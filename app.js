@@ -749,7 +749,7 @@
       <section class="preset-group">
         <div class="section-heading">
           <h2 class="section-title">常用线路</h2>
-          ${state.defaultRouteId ? `<span>桌面默认已设置</span>` : `<span>可设置桌面默认</span>`}
+          ${state.defaultRouteId ? `<span>默认打开已设置</span>` : `<span>可设置默认打开</span>`}
         </div>
         <div class="preset-list">
           ${
@@ -775,7 +775,7 @@
           <div class="route-name">${icon("bus")}<span>${escapeHtml(routeDisplayName(route, "未填写站点"))}</span></div>
           <div class="route-desc">${escapeHtml(route.line || "未填写线路")} · ${escapeHtml(route.city || "未填写城市")} · ${directionText}</div>
           <button class="default-route-button ${isDefault ? "is-active" : ""}" data-action="set-default-route" data-id="${route.id}" type="button" aria-pressed="${isDefault ? "true" : "false"}">
-            ${isDefault ? "桌面默认打开" : "设为桌面默认"}
+            ${isDefault ? "默认打开详情" : "设为默认打开"}
           </button>
         </div>
         <div class="route-actions">
@@ -1668,7 +1668,7 @@
 
   function startApp() {
     const defaultRoute = getDefaultRoute();
-    if (defaultRoute && isStandalone()) {
+    if (defaultRoute) {
       state.activeId = defaultRoute.id;
       state.view = "detail";
       render();
